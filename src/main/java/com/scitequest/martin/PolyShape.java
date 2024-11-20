@@ -432,6 +432,12 @@ public final class PolyShape {
         }
         return pointCorners;
     }
+    public String getPolyStatus() {
+        String centerCoord = String.format("(%f , %f)", getShapeCenter().x, getShapeCenter().y);
+        String ret = String.format("Polygon released. Shape: %s, Center Coordinate: %s", shape, centerCoord);
+        
+        return ret;
+    }
 
     @Override
     public String toString() {

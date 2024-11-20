@@ -1088,4 +1088,13 @@ public final class SlideMask {
     public ArrayList<PolyGrid> getMeasureFields() {
         return measureFields;
     }
+
+    public ArrayList<String> getGrabbedElementsStatus(){
+        
+        ArrayList<String> stringList = new ArrayList<String>();
+        for (PolyShape shape : grabbedShapes) {
+            stringList.add(shape.getPolyStatus());
+        }
+        return stringList;
+    }
 }

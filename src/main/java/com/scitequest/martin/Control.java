@@ -453,6 +453,10 @@ public final class Control implements Controlable {
                 + " x = %d, y = %d, angle = %f",
                 slide.getAbsoluteX(), slide.getAbsoluteY(), slide.getAbsoluteRotation());
         log.config(msg);
+
+        for (String shapeStatus : slide.getGrabbedElementsStatus())
+            log.config(shapeStatus);
+
         slide.releaseGrip();
     }
 

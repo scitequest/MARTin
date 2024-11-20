@@ -74,7 +74,7 @@ public final class Measurepoint implements Comparable<Measurepoint> {
         }
         if (mean < min || mean > max) {
             throw new IllegalArgumentException(String.format(
-                "Mean must be in the interval [min; max]. Provided values: mean = %.6f, min = %.6f, max = %.6f", 
+                "Mean must be in the interval [min; max]. Provided values: mean = %f, min = %f, max = %f", 
                 mean, min, max));
         }
         return new Measurepoint(spot, row, col, min, max, mean, stdDev);
