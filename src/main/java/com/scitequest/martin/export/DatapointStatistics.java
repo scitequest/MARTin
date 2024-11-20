@@ -46,7 +46,9 @@ public final class DatapointStatistics {
             @JsonProperty("normalized_average_std_deviation") double stdDevNormAvg,
             @JsonProperty("relative_normalized_average_std_deviation") double relStdDevNormAvg) {
         if (row < 0 || column < 0) {
-            throw new IllegalArgumentException("Row and column cannot be less than zero");
+            throw new IllegalArgumentException(String.format(
+                "Row and column cannot be less than zero. Provided values: row = %d, column = %d", 
+                row, column));
         }
         return new DatapointStatistics(row, column,
                 rawAvg, stdDevRawAvg, relStdDevRawAvg,

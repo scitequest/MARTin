@@ -61,12 +61,12 @@ public final class Measurepoint implements Comparable<Measurepoint> {
             @JsonProperty("std_deviation") double stdDev)
             throws IllegalArgumentException {
         if (spot < 0) {
-            throw new IllegalArgumentException(
-                String.format("Spotfield has value of: %d. Spotfield cannot be less than zero", spot));
+            throw new IllegalArgumentException(String.format(
+                "Spotfield cannot be less than zero. Provided value: spot = %d", spot));
         }
         if (row < 0 || col < 0) {
-            throw new IllegalArgumentException(
-                String.format("Row has value of: %d, col has value of: %d. Row and column cannot be less than zero", row, col));
+            throw new IllegalArgumentException(String.format(
+                "Row and column cannot be less than zero. Provided values: row = %d, col = %d", row, col));
         }
         if (min > max) {
             throw new IllegalArgumentException(
