@@ -60,22 +60,24 @@ public final class Measurepoint implements Comparable<Measurepoint> {
             @JsonProperty("mean") double mean,
             @JsonProperty("std_deviation") double stdDev)
             throws IllegalArgumentException {
+
+        String spotPos = String.format("Spotfield: %s, row s%, column s%:", spot, row, col);
         if (spot < 0) {
             throw new IllegalArgumentException(String.format(
-                "Spotfield cannot be less than zero. Provided value: spot = %d", spot));
+                "%s Spotfield cannot be less than zero.", spotPos));
         }
         if (row < 0 || col < 0) {
             throw new IllegalArgumentException(String.format(
-                "Row and column cannot be less than zero. Provided values: row = %d, col = %d", row, col));
+                "%s Row and column cannot be less than zero.", spotPos));
         }
         if (min > max) {
             throw new IllegalArgumentException(
-                    String.format("Minimum (%f) must be smaller than maximum (%f)", min, max));
+                    String.format("%s Minimum (%f) must be smaller than maximum (%f)", spotPos, min, max));
         }
         if (mean < min || mean > max) {
             throw new IllegalArgumentException(String.format(
-                "Mean must be in the interval [min; max]. Provided values: mean = %f, min = %f, max = %f", 
-                mean, min, max));
+                "%s Mean must be in the interval [min; max]. Provided values: mean = %f, min = %f, max = %f", 
+                spotPos, mean, min, max));
         }
         return new Measurepoint(spot, row, col, min, max, mean, stdDev);
     }
