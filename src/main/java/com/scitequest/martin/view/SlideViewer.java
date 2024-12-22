@@ -1,7 +1,13 @@
 package com.scitequest.martin.view;
 
 import java.awt.Graphics;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
+
+import javax.swing.AbstractAction;
+import javax.swing.JComponent;
+import javax.swing.KeyStroke;
 
 import com.scitequest.martin.DrawOptions;
 import com.scitequest.martin.settings.Settings;
@@ -20,6 +26,45 @@ public final class SlideViewer extends ImageViewer {
         super();
         this.control = control;
         this.settings = settings;
+
+        setupEventHandlers();
+    }
+
+    private void setupEventHandlers() {
+        imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_R, 0, false), "repositionSlide");
+        imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_A, 0, false), "measureFieldFit");
+        imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_F, 0, false), "toggleFilter");
+        imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_M, 0, false), "measure");
+
+        imagePanel.getActionMap().put("repositionSlide", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                control.repositionSlide();
+                control.update();
+            }
+        });
+        imagePanel.getActionMap().put("measureFieldFit", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                control.measureFieldFit();
+            }
+        });
+        imagePanel.getActionMap().put("toggleFilter", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                control.toggleFilter();
+            }
+        });
+        imagePanel.getActionMap().put("measure", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                control.measure();
+            }
+        });
     }
 
     /**

@@ -41,7 +41,7 @@ public class ImageViewer extends JFrame {
     private Point lastMousePosition;
     private boolean isPanning;
     private final JLabel infoLabel;
-    private final ImagePanel imagePanel;
+    protected final ImagePanel imagePanel;
 
     public ImageViewer() {
         super("Image Viewer");
@@ -71,7 +71,7 @@ public class ImageViewer extends JFrame {
         setVisible(true);
     }
 
-    private class ImagePanel extends JPanel {
+    protected class ImagePanel extends JPanel {
         public ImagePanel() {
             setBackground(Color.LIGHT_GRAY);
         }
@@ -97,6 +97,14 @@ public class ImageViewer extends JFrame {
         MouseMotionAdapter motionAdapter = new MouseMotionAdapter() {
             @Override
             public void mouseMoved(MouseEvent e) {
+                lastMousePosition = e.getPoint();
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (!canvasActive) {
+                    return;
+                }
                 if (isPanning || (e.getModifiersEx() & MouseEvent.BUTTON3_DOWN_MASK) != 0) {
                     if (lastMousePosition != null) {
                         int dx = e.getX() - lastMousePosition.x;
@@ -105,14 +113,6 @@ public class ImageViewer extends JFrame {
                     }
                     lastMousePosition = e.getPoint();
                 }
-            }
-
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                if (!canvasActive) {
-                    return;
-                }
-                lastMousePosition = e.getPoint();
 
                 mouseDraggedHook(e);
             }
@@ -146,10 +146,18 @@ public class ImageViewer extends JFrame {
         imagePanel.addMouseMotionListener(motionAdapter);
 
         // Key bindings
+        // + For ISO keyboards
         imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
-                KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, InputEvent.CTRL_DOWN_MASK), "zoomIn");
+                KeyStroke.getKeyStroke(KeyEvent.VK_PLUS, 0, false), "zoomIn");
+        // + For ANSI keyboards
         imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
-                KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK), "zoomOut");
+                KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, 0, false), "zoomIn");
+        // + For ANSI keyboards when SHIFT is pressed
+        imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, InputEvent.SHIFT_DOWN_MASK),
+                "zoomIn");
+        imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, 0, false), "zoomOut");
         imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
                 KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0, false), "zoomIn");
         imagePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
