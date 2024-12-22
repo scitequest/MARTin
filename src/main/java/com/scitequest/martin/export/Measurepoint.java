@@ -2,6 +2,7 @@ package com.scitequest.martin.export;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.scitequest.martin.utils.DoubleStatistics;
 
 /** Values and metadata of a single measured measurement circle. */
 public final class Measurepoint implements Comparable<Measurepoint> {
@@ -74,6 +75,15 @@ public final class Measurepoint implements Comparable<Measurepoint> {
             throw new IllegalArgumentException("Mean must in the interval [min; max]");
         }
         return new Measurepoint(spot, row, col, min, max, mean, stdDev);
+    }
+
+    public static Measurepoint tryFrom(int spot, int row, int col, DoubleStatistics stats) {
+        if (stats.getCount() == 0) {
+            throw new IllegalArgumentException("Measured pixel count is 0");
+        }
+        return Measurepoint.of(spot, row, col,
+                stats.getMin(), stats.getMax(), stats.getAverage(),
+                stats.getSampleStandardDeviation());
     }
 
     /**

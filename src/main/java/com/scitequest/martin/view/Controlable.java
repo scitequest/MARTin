@@ -1,9 +1,8 @@
 package com.scitequest.martin.view;
 
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Path;
-
-import org.scijava.table.GenericTable;
 
 import com.scitequest.martin.DrawOptions;
 import com.scitequest.martin.export.Data;
@@ -13,8 +12,6 @@ import com.scitequest.martin.export.Metadata;
 import com.scitequest.martin.export.Parameters;
 import com.scitequest.martin.settings.MaskExt;
 import com.scitequest.martin.settings.ProjectExt;
-
-import ij.ImagePlus;
 
 /**
  * Specifies which operations a controller must support.
@@ -184,13 +181,6 @@ public interface Controlable {
      */
     void drawElements(Drawable stilus, DrawOptions drawOptions);
 
-    /**
-     * Passes the requested table to the UI to show it.
-     *
-     * @param table the table to show
-     */
-    void showResultsTable(GenericTable table);
-
     /** Reinitialize a slide after slide parameters were changed. */
     void repositionSlide();
 
@@ -216,7 +206,7 @@ public interface Controlable {
      */
     boolean isFilterEnabled();
 
-    ImagePlus generateGridImage();
+    BufferedImage generateGridImage();
 
     void optionsGuiClosed();
 

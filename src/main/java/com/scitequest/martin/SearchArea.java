@@ -3,18 +3,14 @@ package com.scitequest.martin;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.scitequest.martin.export.Circle;
+import com.scitequest.martin.export.Geometry;
+import com.scitequest.martin.export.Polygon;
 import com.scitequest.martin.settings.MaskSettings.MeasureShape;
-
-import ij.ImagePlus;
-import ij.gui.OvalRoi;
-import ij.gui.PolygonRoi;
-import ij.gui.Roi;
-import ij.plugin.filter.Analyzer;
-import ij.process.FloatPolygon;
+import com.scitequest.martin.utils.DoubleStatistics;
 
 public final class SearchArea {
-    private final Control control;
-    private final ImagePlus iPlus;
+    private final Image image;
     private final PolyShape searchPerimeter;
     private final PolyShape measureField;
     private final double radius;
@@ -23,18 +19,17 @@ public final class SearchArea {
     private final double widthRatio;
     private final double heightRatio;
 
-    private final Roi scanField;
+    private Geometry scanField;
     private final ArrayList<SearchField> searchFields = new ArrayList<SearchField>();
     private int rows;
     private int cols;
 
-    private SearchArea(Control control, ImagePlus iPlus,
+    private SearchArea(Image img,
             PolyShape searchPerimeter, PolyShape measureField,
             double radius,
             double hWidth, double hHeight,
             double widthRatio, double heightRatio) {
-        this.control = control;
-        this.iPlus = iPlus;
+        this.image = img;
         this.searchPerimeter = searchPerimeter;
         this.measureField = measureField;
         this.radius = radius;
@@ -48,23 +43,25 @@ public final class SearchArea {
          * entirety. After this we just shift its position for measurements.
          */
         if (measureField.getShape() == MeasureShape.CIRCLE) {
-            this.scanField = new OvalRoi(0, 0, radius * 2, radius * 2);
+            int diameter = (int) Math.ceil(radius * 2);
+            this.scanField = Circle.of(Point.of(0, 0), diameter);
         } else {
-            FloatPolygon roiPoly = new FloatPolygon();
             double[][] measureElementCoords = measureField.getPolyCoordinates();
+            ArrayList<Point> polyCoords = new ArrayList<>(measureElementCoords[0].length);
             for (int i = 0; i < measureElementCoords[0].length; i++) {
-                roiPoly.addPoint(measureElementCoords[0][i], measureElementCoords[1][i]);
+                Point p = Point.of(measureElementCoords[0][i], measureElementCoords[1][i]);
+                polyCoords.add(p);
             }
-            this.scanField = new PolygonRoi(roiPoly, Roi.POLYGON);
+            this.scanField = Polygon.ofPolygon(polyCoords);
         }
         // tightPopulation();
         loosePopulation();
     }
 
-    public static SearchArea of(Control control, ImagePlus iPlus, PolyShape searchPerimeter,
+    public static SearchArea of(Control control, Image img, PolyShape searchPerimeter,
             PolyShape measureGridElement,
             double radius, double hWidth, double hHeight, double widthRatio, double heightRatio) {
-        return new SearchArea(control, iPlus,
+        return new SearchArea(img,
                 searchPerimeter, measureGridElement,
                 radius, hWidth, hHeight,
                 widthRatio, heightRatio);
@@ -75,11 +72,26 @@ public final class SearchArea {
         if (respectBounds && searchPerimeter.isClickInsidePoly(x, y) == null) {
             return -1;
         }
-        scanField.setLocation(x - hWidth, y - hHeight);
+        scanField = scanField.moveTo(x - hWidth, y - hHeight);
 
-        iPlus.setRoi(scanField);
-        double mean = iPlus.getStatistics(Analyzer.getMeasurements()).mean;
-        iPlus.killRoi();
+        DoubleStatistics stats;
+
+        try {
+            if (scanField instanceof Circle) {
+                Circle origCircle = (Circle) scanField;
+                Circle shiftedCircle = Circle.of(
+                        Point.of(origCircle.position.x + radius, origCircle.position.y + radius),
+                        origCircle.diameter);
+                stats = image.measure(shiftedCircle);
+            } else {
+                stats = image.measure(scanField);
+            }
+        } catch (MeasurementException e) {
+            // TODO: Verify search area ensures no measurement exceptions can happen
+            throw new IllegalStateException(e);
+        }
+
+        double mean = stats.getAverage();
 
         return mean;
     }
@@ -87,20 +99,6 @@ public final class SearchArea {
     private void loosePopulation() {
         int horizontalRatio = (int) widthRatio;
         int verticalRatio = (int) heightRatio;
-        populatePerimeter(horizontalRatio, verticalRatio);
-        interlinkFields();
-    }
-
-    private void roundedPopulation() {
-        int horizontalRatio = (int) Math.round(widthRatio);
-        int verticalRatio = (int) Math.round(heightRatio);
-        populatePerimeter(horizontalRatio, verticalRatio);
-        interlinkFields();
-    }
-
-    private void tightPopulation() {
-        int horizontalRatio = (int) Math.ceil(widthRatio);
-        int verticalRatio = (int) Math.ceil(heightRatio);
         populatePerimeter(horizontalRatio, verticalRatio);
         interlinkFields();
     }
@@ -224,15 +222,6 @@ public final class SearchArea {
             }
             searchFields.removeAll(delQueue);
         }
-    }
-
-    private void snapshot() {
-        ArrayList<Point> pos = new ArrayList<Point>();
-        for (SearchField sField : searchFields) {
-            pos.add(sField.getCenterPoint());
-        }
-
-        control.recordSearchAlgo(searchPerimeter, pos, hWidth, hHeight).show();
     }
 
     public Point searchForAbsoluteMax() {

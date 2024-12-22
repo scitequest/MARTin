@@ -9,4 +9,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = Polygon.class, name = "POLYGON"),
 })
 public interface Geometry {
+
+    Geometry moveTo(double d, double e);
 }

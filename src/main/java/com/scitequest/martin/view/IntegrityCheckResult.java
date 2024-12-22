@@ -16,6 +16,7 @@ public final class IntegrityCheckResult {
         IMAGE_OPEN_FAILED,
         IO_EXCEPTION,
         NO_FILES_CHECKED,
+        MEASUREMENT_EXCEPTION,
     }
 
     public static final class IntegrityCheckContext {

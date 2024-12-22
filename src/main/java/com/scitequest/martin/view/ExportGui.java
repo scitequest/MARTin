@@ -9,6 +9,7 @@ import java.awt.Insets;
 import java.awt.SystemColor;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -33,11 +34,6 @@ import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
-
-import org.scijava.table.DefaultGenericTable;
-import org.scijava.table.DoubleColumn;
-import org.scijava.table.GenericTable;
-import org.scijava.table.IntColumn;
 
 import com.scitequest.martin.Const;
 import com.scitequest.martin.export.Data;
@@ -474,7 +470,9 @@ public final class ExportGui extends JDialog {
     }
 
     private void handleShowGriddedImage() {
-        control.generateGridImage().show();
+        BufferedImage img = control.generateGridImage();
+        ImageViewer viewer = new ImageViewer();
+        viewer.setImage(img, false);
     }
 
     /**
@@ -527,7 +525,7 @@ public final class ExportGui extends JDialog {
     }
 
     private void handleShowResultTable() {
-        GenericTable table = new DefaultGenericTable();
+        GenericTable table = new GenericTable();
 
         // Create columns
         IntColumn spotfieldColumn = new IntColumn("Spotfield");
@@ -565,7 +563,7 @@ public final class ExportGui extends JDialog {
         table.add(iNormColumn);
 
         // Show the table
-        control.showResultsTable(table);
+        table.setVisible(true);
     }
 
     public void loadProject(int projectIndex) {
@@ -600,7 +598,7 @@ public final class ExportGui extends JDialog {
     }
 
     private void handleShowAnalysisTable() {
-        GenericTable table = new DefaultGenericTable();
+        GenericTable table = new GenericTable();
 
         IntColumn rowColumn = new IntColumn("Row");
         IntColumn columnColumn = new IntColumn("Column");
@@ -636,7 +634,7 @@ public final class ExportGui extends JDialog {
         table.add(stdDevNormalized);
         table.add(relStdDevNormalized);
 
-        control.showResultsTable(table);
+        table.setVisible(true);
     }
 
     /**

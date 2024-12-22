@@ -6,17 +6,21 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.Optional;
+import java.util.Properties;
+import java.util.ResourceBundle;
 
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerDateModel;
 
-import com.scitequest.martin.Const;
+import org.jdatepicker.impl.JDatePanelImpl;
+import org.jdatepicker.impl.JDatePickerImpl;
+import org.jdatepicker.impl.UtilDateModel;
 
-import net.sourceforge.jdatepicker.impl.JDatePanelImpl;
-import net.sourceforge.jdatepicker.impl.JDatePickerImpl;
-import net.sourceforge.jdatepicker.impl.UtilDateModel;
+import com.scitequest.martin.Const;
+import com.scitequest.martin.utils.SystemUtils;
 
 /**
  * Users can input time and date with instances of this interface.
@@ -42,6 +46,16 @@ public class TimestampInput extends JPanel {
      */
     private final static int ELEMENT_ROWS = 1;
 
+    private Properties convertToProperties(ResourceBundle resource) {
+        Properties properties = new Properties();
+        Enumeration<String> keys = resource.getKeys();
+        while (keys.hasMoreElements()) {
+            String key = keys.nextElement();
+            properties.put(key, resource.getString(key));
+        }
+        return properties;
+    }
+
     /**
      * Constructor of TimestampInput.
      * All elements are directly generated and preloaded
@@ -59,7 +73,11 @@ public class TimestampInput extends JPanel {
         UtilDateModel model = new UtilDateModel();
         model.setSelected(true);
 
-        datePicker = new JDatePickerImpl(new JDatePanelImpl(model), new DateLabelFormatter());
+        ResourceBundle resourceBundle = ResourceBundle.getBundle(
+                "org.jdatepicker.i18n.Text", SystemUtils.getLocale());
+        datePicker = new JDatePickerImpl(
+                new JDatePanelImpl(model, convertToProperties(resourceBundle)),
+                new DateLabelFormatter());
         add(datePicker);
 
         if (assayDatetime.isPresent()) {

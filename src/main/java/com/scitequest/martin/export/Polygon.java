@@ -1,5 +1,6 @@
 package com.scitequest.martin.export;
 
+import java.awt.geom.Rectangle2D;
 import java.util.Collections;
 import java.util.List;
 
@@ -22,6 +23,36 @@ public class Polygon implements Geometry {
     public static Polygon ofRectangle(Point p0, Point p1, Point p2, Point p3) {
         List<Point> coords = List.of(p0, p1, p2, p3);
         return new Polygon(coords);
+    }
+
+    public Rectangle2D.Double calculateBounds() {
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+
+        for (Point p : coordinates) {
+            minX = Math.min(minX, p.x);
+            maxX = Math.max(maxX, p.x);
+            minY = Math.min(minY, p.y);
+            maxY = Math.max(maxY, p.y);
+        }
+
+        return new Rectangle2D.Double(minX, minY, maxX - minX, maxY - minY);
+    }
+
+    @Override
+    public Geometry moveTo(double x, double y) {
+        List<Point> coords = List.copyOf(coordinates);
+        Rectangle2D.Double bounds = calculateBounds();
+
+        for (int i = 0; i < coords.size(); i++) {
+            Point p = coords.get(i);
+            Point newPos = Point.of(p.x - bounds.x + x, p.y - bounds.y + y);
+            coords.set(i, newPos);
+        }
+
+        return Polygon.ofPolygon(coords);
     }
 
     @Override

@@ -24,6 +24,11 @@ public class Circle implements Geometry {
     }
 
     @Override
+    public Geometry moveTo(double x, double y) {
+        return Circle.of(Point.of(x, y), diameter);
+    }
+
+    @Override
     public int hashCode() {
         final int prime = 31;
         int result = 1;

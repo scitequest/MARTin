@@ -26,15 +26,7 @@ import com.scitequest.martin.values.Kcna2FmB6Expected;
 import com.scitequest.martin.values.Kcna2Fp31sExpected;
 import com.scitequest.martin.values.SyniSm67;
 
-import ij.IJ;
-import net.imagej.ImageJ;
-import net.imagej.patcher.LegacyInjector;
-
 public final class IT {
-
-    static {
-        LegacyInjector.preinit();
-    }
 
     /**
      * Enables the output of measurement values.
@@ -46,28 +38,23 @@ public final class IT {
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
 
-    private ImageJ ij;
     private Path settingsPath;
 
     @Before
     public void setUp() throws IOException {
-        ij = new ImageJ();
         settingsPath = folder.newFile().toPath();
         Settings.defaultSettings().save(settingsPath);
     }
 
     @After
     public void tearDown() {
-        if (ij != null) {
-            ij.dispose();
-        }
         settingsPath = null;
     }
 
     @Test
-    public void kcna2FmB6() throws IOException, SecurityException, JsonParseException {
+    public void kcna2FmB6() throws IOException, SecurityException, JsonParseException, MeasurementException {
         String imagePath = "src/test/resources/img/BS6 - 60sec - B - 1.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         control.setActiveMask(Paths.get("src/test/resources/kcna2_fm_b6_mask.json"));
         control.repositionSlide();
@@ -86,9 +73,9 @@ public final class IT {
     }
 
     @Test
-    public void kcna2Fp31s() throws IOException, SecurityException, JsonParseException {
+    public void kcna2Fp31s() throws IOException, SecurityException, JsonParseException, MeasurementException {
         String imagePath = "src/test/resources/img/KCNA2 - fp - 31s - 30sec - B - 4.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         control.setActiveMask(Paths.get("src/test/resources/kcna2_fp_31s_mask.json"));
         control.repositionSlide();
@@ -107,9 +94,9 @@ public final class IT {
     }
 
     @Test
-    public void syniSm67() throws IOException, SecurityException, JsonParseException {
+    public void syniSm67() throws IOException, SecurityException, JsonParseException, MeasurementException {
         String imagePath = "src/test/resources/img/SYNI - SM67 - 60sec - A - 2.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         control.setActiveMask(Paths.get("src/test/resources/syni_sm67_mask.json"));
         control.repositionSlide();

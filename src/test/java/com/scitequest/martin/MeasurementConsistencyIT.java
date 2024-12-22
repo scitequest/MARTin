@@ -1,6 +1,7 @@
 package com.scitequest.martin;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
@@ -27,41 +28,28 @@ import com.scitequest.martin.export.Metadata;
 import com.scitequest.martin.export.Patient;
 import com.scitequest.martin.settings.Settings;
 
-import ij.IJ;
-import net.imagej.ImageJ;
-import net.imagej.patcher.LegacyInjector;
-
 public class MeasurementConsistencyIT {
-
-    static {
-        LegacyInjector.preinit();
-    }
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
 
-    private ImageJ ij;
     private Path settingsPath;
 
     @Before
     public void setUp() throws IOException {
-        ij = new ImageJ();
         settingsPath = folder.newFile().toPath();
         Settings.defaultSettings().save(settingsPath);
     }
 
     @After
     public void tearDown() {
-        if (ij != null) {
-            ij.dispose();
-        }
         settingsPath = null;
     }
 
     @Test
-    public void test() throws IOException, SecurityException, JsonParseException {
+    public void test() throws IOException, SecurityException, JsonParseException, MeasurementException {
         String imagePath = "src/test/resources/img/22-06-02 - 60sec - P.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         Data data1 = control.doMeasure();
         Data data2 = control.doMeasure();
@@ -84,9 +72,10 @@ public class MeasurementConsistencyIT {
      * due to running in headless.
      */
     @Test
-    public void testFilteringDoesNotAffectMeasuring() throws SecurityException, IOException, JsonParseException {
+    public void testFilteringDoesNotAffectMeasuring()
+            throws SecurityException, IOException, JsonParseException, MeasurementException {
         String imagePath = "src/test/resources/img/22-06-02 - 60sec - P.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         control.setFilterEnabled(false);
         Data first = control.doMeasure();
@@ -101,7 +90,8 @@ public class MeasurementConsistencyIT {
     }
 
     @Test
-    public void testMeasurementWithSpotfieldOutsideOfImage() throws SecurityException, IOException, JsonParseException {
+    public void testMeasurementWithSpotfieldOutsideOfImage()
+            throws SecurityException, IOException, JsonParseException, MeasurementException {
         Settings settings = Settings.load(settingsPath);
         // Prevents spamming of the console as only 4 measurepoints exist.
         settings.getMaskSettings().setLastMeasurePointIndex(1);
@@ -111,24 +101,16 @@ public class MeasurementConsistencyIT {
         settings.save();
 
         String imagePath = "src/test/resources/img/BS6 - 60sec - B - 1.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
         control.moveSlide(-10000, -10000);
-        Data data = control.doMeasure();
-        assertTrue(data.getValues().stream().allMatch(dp -> {
-            Measurepoint mp = dp.getMeasurePoint();
-            return mp.getMin() == 0.0
-                    && mp.getMean() == 0.0
-                    && mp.getMax() == 0.0
-                    && dp.getMeanMinusMin() == 0.0
-                    && dp.getNormalizedMean() == 0.0;
-        }));
+        assertThrows(MeasurementException.class, () -> control.doMeasure());
     }
 
     @Test
     public void testMeasureFollowedByValidation()
-            throws SecurityException, IOException, JsonParseException {
+            throws SecurityException, IOException, JsonParseException, MeasurementException {
         String imagePath = "src/test/resources/img/22-06-02 - 60sec - N.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
         control.setActiveMask(Paths.get("src/test/resources/20220602_N_mask.json"));
         control.repositionSlide();
         control.moveSlide(504, 973);
@@ -148,7 +130,7 @@ public class MeasurementConsistencyIT {
 
     @Test
     public void testMeasurementAreSequentialSpots()
-            throws SecurityException, IOException, JsonParseException {
+            throws SecurityException, IOException, JsonParseException, MeasurementException {
         Settings settings = Settings.load(settingsPath);
         // Disable invert LUT for the checkerboard.
         settings.getMeasurementSettings().setInvertLut(false);
@@ -162,7 +144,7 @@ public class MeasurementConsistencyIT {
         settings.save();
 
         String imagePath = "src/test/resources/img/checker.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         Data data = control.doMeasure();
         assertCheckerImgDataSymmetric(data);
@@ -170,7 +152,7 @@ public class MeasurementConsistencyIT {
 
     @Test
     public void testLastSpotfieldIndexNotAffectingMeasurementPositions()
-            throws SecurityException, IOException, JsonParseException {
+            throws SecurityException, IOException, JsonParseException, MeasurementException {
         Settings settings = Settings.load(settingsPath);
         // Disable invert LUT for the checkerboard.
         settings.getMeasurementSettings().setInvertLut(false);
@@ -184,7 +166,7 @@ public class MeasurementConsistencyIT {
         settings.save();
 
         String imagePath = "src/test/resources/img/checker.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
 
         Data data = control.doMeasure();
         assertCheckerImgDataSymmetric(data);

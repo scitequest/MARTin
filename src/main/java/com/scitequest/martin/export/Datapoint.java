@@ -2,8 +2,10 @@ package com.scitequest.martin.export;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
 
+@JsonPropertyOrder({ "measurePoint", "meanMinusMin", "normalizedMean" })
 public final class Datapoint {
 
     /** Raw measurements taken of the image. */

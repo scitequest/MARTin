@@ -1,42 +1,35 @@
 package com.scitequest.martin.view;
 
 import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics;
 import java.awt.Polygon;
 
-import ij.process.ImageProcessor;
-import net.imagej.patcher.LegacyInjector;
-
 public final class ProcessorPen implements Drawable {
+    private final Graphics g;
 
-    static {
-        LegacyInjector.preinit();
-    }
-
-    private final ImageProcessor iProc;
-
-    public ProcessorPen(ImageProcessor iProc) {
-        this.iProc = iProc;
+    public ProcessorPen(Graphics g) {
+        this.g = g;
     }
 
     @Override
     public void setColor(Color colour) {
-        iProc.setColor(colour);
+        g.setColor(colour);
     }
 
     @Override
     public void drawPolygon(int[] polygonX, int[] polygonY) {
-        // we could add an error message if xLength != yLenght
-        iProc.drawPolygon(new Polygon(polygonX, polygonY, polygonY.length));
+        g.drawPolygon(new Polygon(polygonX, polygonY, polygonY.length));
     }
 
     @Override
     public void drawString(String text, int x, int y) {
-        iProc.setJustification(ImageProcessor.CENTER_JUSTIFY);
-        iProc.drawString(text, x, y);
+        g.setFont(new Font("TimesRoman", Font.PLAIN, 10));
+        g.drawString(text, x, y);
     }
 
     @Override
     public void drawOval(int x, int y, int width, int height) {
-        iProc.drawOval(x, y, width, height);
+        g.drawOval(x, y, width, height);
     }
 }

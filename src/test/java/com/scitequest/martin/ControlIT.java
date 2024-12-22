@@ -18,41 +18,28 @@ import org.junit.rules.TemporaryFolder;
 import com.scitequest.martin.export.JsonParseException;
 import com.scitequest.martin.settings.Settings;
 
-import ij.IJ;
-import net.imagej.ImageJ;
-import net.imagej.patcher.LegacyInjector;
-
 public class ControlIT {
-
-    static {
-        LegacyInjector.preinit();
-    }
 
     @Rule
     public TemporaryFolder folder = new TemporaryFolder();
 
-    private ImageJ ij;
     private Path settingsPath;
 
     @Before
     public void setUp() throws IOException {
-        ij = new ImageJ();
         settingsPath = folder.newFile().toPath();
         Settings.defaultSettings().save(settingsPath);
     }
 
     @After
     public void tearDown() {
-        if (ij != null) {
-            ij.dispose();
-        }
         settingsPath = null;
     }
 
     @Test
     public void testImageClosed() throws SecurityException, IOException, JsonParseException {
         String imagePath = "src/test/resources/img/BS6 - 60sec - B - 1.tif";
-        Control control = Control.headless(ij, IJ.openImage(imagePath), settingsPath);
+        Control control = Control.headless(ImageImpl.read(Path.of(imagePath)), settingsPath);
         assertTrue(control.isImageLoaded());
         control.imageClosed();
         assertTrue(!control.isImageLoaded());

@@ -5,11 +5,10 @@ import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 
+import com.scitequest.martin.Image;
 import com.scitequest.martin.export.Data;
 import com.scitequest.martin.export.DataStatistics;
 import com.scitequest.martin.export.Parameters;
-
-import ij.ImagePlus;
 
 /**
  * A view defines which operations a GUI/TUI etc. must support.
@@ -86,11 +85,11 @@ public interface View {
      *
      * This has no effect on measuring.
      *
-     * @param imagePlus      the new image to be displayed
+     * @param img            the new image to be displayed
      * @param recreateWindow if true, the old window is closed and a fresh window
      *                       will be created to show the image
      */
-    void setDisplayImage(ImagePlus imagePlus, boolean recreateWindow);
+    void setDisplayImage(Image img, boolean recreateWindow);
 
     /**
      * Either activates or deactivates all buttons of the gui.

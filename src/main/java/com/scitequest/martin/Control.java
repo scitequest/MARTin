@@ -4,9 +4,11 @@ import static java.time.temporal.ChronoField.HOUR_OF_DAY;
 import static java.time.temporal.ChronoField.MINUTE_OF_HOUR;
 import static java.time.temporal.ChronoField.SECOND_OF_MINUTE;
 
-import java.awt.Color;
 import java.awt.FileDialog;
 import java.awt.Frame;
+import java.awt.Graphics2D;
+import java.awt.geom.Rectangle2D;
+import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
@@ -44,15 +46,10 @@ import javax.json.JsonWriterFactory;
 import javax.json.stream.JsonGenerator;
 import javax.swing.JOptionPane;
 
-import org.scijava.log.LogService;
-import org.scijava.plugin.Parameter;
-import org.scijava.table.GenericTable;
-import org.scijava.ui.UIService;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
 import com.formdev.flatlaf.FlatLaf;
-import com.scitequest.martin.export.Circle;
 import com.scitequest.martin.export.Data;
 import com.scitequest.martin.export.DataStatistics;
 import com.scitequest.martin.export.Geometry;
@@ -67,6 +64,7 @@ import com.scitequest.martin.settings.MaskSettings;
 import com.scitequest.martin.settings.ProjectExt;
 import com.scitequest.martin.settings.ProjectSettings;
 import com.scitequest.martin.settings.Settings;
+import com.scitequest.martin.utils.DoubleStatistics;
 import com.scitequest.martin.utils.SystemUtils;
 import com.scitequest.martin.view.Controlable;
 import com.scitequest.martin.view.Drawable;
@@ -79,30 +77,12 @@ import com.scitequest.martin.view.ProcessorPen;
 import com.scitequest.martin.view.SettingsGui;
 import com.scitequest.martin.view.View;
 
-import ij.IJ;
-import ij.ImagePlus;
-import ij.gui.OvalRoi;
-import ij.gui.PolygonRoi;
-import ij.gui.Roi;
-import ij.gui.StackWindow;
-import ij.plugin.filter.Analyzer;
-import ij.process.FloatPolygon;
-import ij.process.ImageProcessor;
-import ij.process.ImageStatistics;
-import net.imagej.Dataset;
-import net.imagej.ImageJ;
-import net.imagej.patcher.LegacyInjector;
-
 /**
  * This class is the central node between all classes of the project. Control
  * assures proper coordination between a theoretical slideMask, user output and
  * user input.
  */
 public final class Control implements Controlable {
-
-    static {
-        LegacyInjector.preinit();
-    }
 
     /** Logger specific to the our base package. */
     private static final Logger MARTIN_LOGGER = Logger.getLogger("com.scitequest.martin");
@@ -114,22 +94,12 @@ public final class Control implements Controlable {
     private final RunType runType;
 
     /**
-     * Reference to the ImageJ context handle to properly dispose of if running in
-     * standalone.
-     */
-    private final ImageJ ij;
-
-    /**
      * The image(es) to measure.
      *
      * Warning: this must be handled fully read-only to provide measurement
      * consistency. Always {@code duplicate()} before mutating the object!
      */
-    private Optional<ImagePlus> imagePlus = Optional.empty();
-
-    /** The ImageJ UI to show tables and stuff. */
-    @Parameter
-    private UIService ui;
+    private Optional<Image> image = Optional.empty();
 
     /**
      * View is either empty (during tests) or contains a GUI (when used by an actual
@@ -158,24 +128,17 @@ public final class Control implements Controlable {
      * Create the control instance.
      *
      * @param runType  how the control is run
-     * @param ij       the ImageJ handle
-     * @param iPlus    the image if running in headless as no UI is open
+     * @param img      the image if running in headless as no UI is open
      * @param settings the settings
      */
-    private Control(RunType runType, ImageJ ij,
-            Optional<ImagePlus> iPlus, Settings settings) {
+    private Control(RunType runType, Optional<Image> img, Settings settings) {
         log.info(String.format("Starting MARTin %s (Git commit %s) in %s mode and locale %s",
                 Const.VERSION, Const.GIT_INFO, runType, SystemUtils.getLocale()));
 
         this.runType = runType;
-        this.ij = ij;
-        this.imagePlus = iPlus;
+        this.image = img;
         this.settings = settings;
         this.slide = new SlideMask(settings);
-
-        // Inject the ImageJ context.
-        // This causes the @Parameter instance variables to populate automatically.
-        ij.context().inject(this);
 
         switch (runType) {
             case HEADLESS:
@@ -183,12 +146,6 @@ public final class Control implements Controlable {
             case STANDALONE:
                 this.view = Optional.of(new Gui(this, this.settings,
                         Const.VERSION, Const.GIT_INFO));
-                break;
-            case PLUGIN:
-                this.view = Optional.of(new Gui(this, this.settings,
-                        Const.VERSION, Const.GIT_INFO));
-                iPlus.ifPresent(imp -> view.get().setDisplayImage(imp, true));
-                update();
                 break;
             default:
                 String msg = "Non-existant runType was selected";
@@ -200,38 +157,11 @@ public final class Control implements Controlable {
     }
 
     /**
-     * Create the control running in plugin mode.
-     *
-     * In plugin mode a GUI is created but ImageJ is not closed when the plugin is
-     * closed.
-     *
-     * @param ij    the ImageJ handle
-     * @param iPlus the optional image to process
-     */
-    public static void plugin(ImageJ ij, Optional<ImagePlus> iPlus) {
-        try {
-            setupLogging(ij.log());
-        } catch (SecurityException | IOException e) {
-            System.err.println("Failed to initialize MARTin logging: " + e);
-            String msg = String.format(Const.bundle.getString("control.martinStartupErrorLogging.text"), e);
-            GuiUtils.showErrorDialog((Frame) null, msg,
-                    Const.bundle.getString("control.martinStartupErrorLogging.title"));
-            ij.dispose();
-            return;
-        }
-        // Don't dispose ImageJ on failure since we should only crash our plugin.
-        getSettingsCheckedWithGui().ifPresent(settings -> {
-            new Control(RunType.PLUGIN, ij, iPlus, settings);
-        });
-    }
-
-    /**
      * Create the control running in headless mode.
      *
      * In headless mode no GUI is created.
      *
-     * @param ij           the ImageJ handle
-     * @param iPlus        the image to process
+     * @param img          the image to process
      * @param settingsPath the path to the settings file to load
      * @return the new control
      * @throws IOException        if the settings or log file could not be
@@ -242,46 +172,41 @@ public final class Control implements Controlable {
      *                            LoggingPermission("control")
      * @throws JsonParseException if the settings provided could not be parsed
      */
-    public static Control headless(ImageJ ij, ImagePlus iPlus, Path settingsPath)
+    public static Control headless(Image img, Path settingsPath)
             throws SecurityException, IOException, JsonParseException {
-        setupLogging(ij.log());
+        setupLogging();
         Settings settings = Settings.loadOrDefault(settingsPath);
-        return new Control(RunType.HEADLESS, ij, Optional.of(iPlus), settings);
+        return new Control(RunType.HEADLESS, Optional.of(img), settings);
     }
 
     /**
      * Create the control running in standalone mode.
      *
-     * In standalone mode a GUI is created and the whole application including
-     * ImageJ is disposed when the plugin is closed.
-     *
      * If there is no image supplied the program will start without a loaded image.
      *
-     * @param ij the ImageJ handle
      */
-    public static void standalone(ImageJ ij) {
+    public static void standalone() {
         try {
-            setupLogging(ij.log());
+            setupLogging();
         } catch (SecurityException | IOException e) {
             System.err.println("Failed to initialize MARTin logging: " + e);
             String msg = String.format(Const.bundle.getString("control.martinStartupErrorLogging.text"), e);
             GuiUtils.showErrorDialog((Frame) null, msg,
                     Const.bundle.getString("control.martinStartupErrorLogging.title"));
-            ij.dispose();
             return;
         }
         // We have to dispose ImageJ on failure to fully exist.
-        getSettingsCheckedWithGui().ifPresentOrElse(settings -> {
+        getSettingsCheckedWithGui().ifPresent(settings -> {
             // Initialize look and feel
             FlatLaf.registerCustomDefaultsSource("themes");
             String themeClassName = settings.getDisplaySettings().getTheme().getClassName();
             SettingsGui.setLookAndFeel(themeClassName);
             // Create new control instance that runs the application
-            new Control(RunType.STANDALONE, ij, Optional.empty(), settings);
-        }, () -> ij.dispose());
+            new Control(RunType.STANDALONE, Optional.empty(), settings);
+        });
     }
 
-    private static void setupLogging(LogService logService) throws SecurityException, IOException {
+    private static void setupLogging() throws SecurityException, IOException {
         // Only setup our logging if it hasn't been already
         boolean isLoggingAlreadyConfigured = MARTIN_LOGGER.getHandlers().length != 0;
         if (!isLoggingAlreadyConfigured) {
@@ -300,8 +225,6 @@ public final class Control implements Controlable {
             fh.setFormatter(new SimpleFormatter());
             // Adds the file handler to the logger
             MARTIN_LOGGER.addHandler(fh);
-            // Split our logged messages into ImageJ as well
-            MARTIN_LOGGER.addHandler(IjLogHandler.of(logService));
         }
     }
 
@@ -352,8 +275,8 @@ public final class Control implements Controlable {
      *
      * @throws IllegalStateException if no image is open
      */
-    private ImagePlus ensureImageOpen() throws IllegalStateException {
-        return this.imagePlus.orElseThrow(() -> {
+    private Image ensureImageOpen() throws IllegalStateException {
+        return this.image.orElseThrow(() -> {
             String msg = "No current image despite one being required";
             log.severe(msg);
             return new IllegalStateException(msg);
@@ -468,11 +391,10 @@ public final class Control implements Controlable {
         ensureImageOpen();
 
         // Copies the image and makes sure its LUT is the same as the original image.
-        ImagePlus iPlus = this.imagePlus.get().duplicate();
+        Image img = this.image.get().duplicate();
         if (settings.getMeasurementSettings().isInvertLut()) {
-            setBlackValueHigh(iPlus);
+            img.invert();
         }
-        ImageProcessor iProc = iPlus.getProcessor();
 
         // Effectively defines the bounds the measureFields are allowed to be moved in
         // this algorithm.
@@ -525,7 +447,8 @@ public final class Control implements Controlable {
                     PolyShape searchPerimeter = spotFields.get(field).getGridElement(row, col)
                             .shrinkByShape(measureFields.get(field).getGridElement(row, col));
 
-                    SearchArea searchArea = SearchArea.of(this, iPlus, searchPerimeter, measureGridElement, radius,
+                    SearchArea searchArea = SearchArea.of(this, img, searchPerimeter,
+                            measureGridElement, radius,
                             hWidth, hHeight, widthRatio, heightRatio);
 
                     // Calculates the center of the highest value position
@@ -536,7 +459,6 @@ public final class Control implements Controlable {
             }
             measureFields.get(field).calculateGridOrbits(slide.getrCenter());
         }
-        iProc.resetRoi();
         update();
     }
 
@@ -544,53 +466,44 @@ public final class Control implements Controlable {
      * Subtracts each pixel value of a given image by the mean pixel value of given
      * set of deletionRectangles.
      *
-     * @param iPlus              The image the noise reduction will take place on.
+     * @param img                The image the noise reduction will take place on.
      * @param deletionRectangles A set of rectangles which are positioned on the
      *                           background of an image.
      */
-    private static void subtractBackground(ImagePlus iPlus, List<Polygon> deletionRectangles) {
-        log.config("Initiate subtractBackground.");
+    private static double measureBackgroundNoise(Image img, List<Polygon> deletionRectangles) {
+        log.config("Getting background noise.");
 
-        ImageProcessor iProc = iPlus.getProcessor();
-        double backgroundNoise = 0;
-        int validDeletionRects = 0;
+        double backgroundNoiseSum = 0.0;
+        int validBackgroundRectangles = 0;
 
+        // Measure each deletion rectangle
         for (Polygon poly : deletionRectangles) {
             var coords = poly.coordinates;
-            boolean withinBounds = true;
-            // Check whether a rectangle is within bounds
-            for (int j = 0; j < SlideMask.RECTANGULAR; j++) {
-                if (coords.get(j).y > iPlus.getHeight()
-                        || coords.get(j).y < 0
-                        || coords.get(j).x > iPlus.getWidth()
-                        || coords.get(j).x < 0) {
-                    j = SlideMask.RECTANGULAR;
-                    withinBounds = false;
-                }
+            // To match previous versions, the background rectangle coordinates are floored
+            List<Point> pointsFloored = new ArrayList<>(coords.size());
+            for (Point p : poly.coordinates) {
+                Point pFloored = Point.of((int) p.x, (int) p.y);
+                pointsFloored.add(pFloored);
             }
-            if (withinBounds) {
-                int[] xArray = new int[SlideMask.RECTANGULAR];
-                int[] yArray = new int[SlideMask.RECTANGULAR];
-                for (int j = 0; j < xArray.length; j++) {
-                    xArray[j] = (int) coords.get(j).x;
-                    yArray[j] = (int) coords.get(j).y;
-                }
-                iProc.setRoi(new PolygonRoi(xArray, yArray, xArray.length, Roi.POLYGON));
-                backgroundNoise += iProc.getStats().mean;
-                iProc.resetRoi();
-                validDeletionRects++;
+            // Try to measure the backround rectangle
+            try {
+                DoubleStatistics stats = img.measure(Polygon.ofPolygon(pointsFloored));
+                backgroundNoiseSum += stats.getAverage();
+                validBackgroundRectangles++;
+            } catch (MeasurementException e) {
+                log.config(String.format("deletion rectangle is out of bounds: %s", poly));
             }
         }
-        if (validDeletionRects > 0) {
-            backgroundNoise = backgroundNoise / validDeletionRects;
-            log.config("backgroundNoise to be subtracted = " + backgroundNoise);
-            iProc.subtract(backgroundNoise);
-            iPlus.setProcessor(iProc);
-        } else {
-            log.severe("No noise could be subtracted because no background subtraction rectangle"
-                    + " was within image bounds");
+
+        if (validBackgroundRectangles == 0) {
+            log.warning(
+                    "No noise could be subtracted because no background subtraction rectangle was within image bounds");
+            return 0.0;
         }
-        iProc.resetRoi(); // not sure if needed
+
+        double backgroundNoise = backgroundNoiseSum / validBackgroundRectangles;
+        log.config("backgroundNoise to be subtracted = " + backgroundNoise);
+        return backgroundNoise;
     }
 
     /**
@@ -726,11 +639,10 @@ public final class Control implements Controlable {
         }
     }
 
-    private boolean writeImageFile(Path path, ImagePlus iPlus) {
+    private boolean writeImageFile(Path path, BufferedImage img) {
         log.config(String.format("Writing image file '%s'", path));
         try {
-            Dataset dataset = ij.convert().convert(iPlus, Dataset.class);
-            ij.scifio().datasetIO().save(dataset, path.toString());
+            ImageIO.write(img, "tif", path.toFile());
             return false;
         } catch (IOException e) {
             String msg = String.format(Const.bundle.getString("control.exportImageFileError.text"), path);
@@ -805,7 +717,7 @@ public final class Control implements Controlable {
             }
         }
         if (exportSettings.isSaveWholeImage()) {
-            Path imagePath = Paths.get(imagePlus.get().getOriginalFileInfo().getFilePath());
+            Path imagePath = image.get().getFilePath();
             Optional<String> extension = Optional.ofNullable(imagePath.getFileName())
                     .map(f -> f.toString())
                     .filter(f -> f.contains("."))
@@ -879,17 +791,20 @@ public final class Control implements Controlable {
     }
 
     /**
-     * Measures and returns image statistics for a given ImagePlus.
+     * Measures and returns image statistics for a given image.
      *
      * Also does some data analysis, namely:
      * shifting the minimum of each spotField to zero
      * as well as internal nomalization of each spotField.
      *
-     * @param iPlus      image to be measured
-     * @param parameters measurement parameters
+     * @param img             image to be measured
+     * @param backgroundNoise
+     * @param parameters      measurement parameters
      * @return measurement data of image.
+     * @throws MeasurementException
      */
-    private static Data measureValues(ImagePlus iPlus, Parameters parameters) {
+    private static Data measureValues(Image img, Parameters parameters)
+            throws MeasurementException {
         List<Geometry> spots = parameters.getSpots();
         int maxSpotsPerSpotfield = spots.size() / parameters.getNumberOfSpotfields();
 
@@ -900,53 +815,24 @@ public final class Control implements Controlable {
                 int col = i % parameters.getColumnsPerSpotfield();
                 int absIdx = spot * maxSpotsPerSpotfield + i;
 
-                ImageStatistics imageStats = getSpotStats(iPlus, spots.get(absIdx));
-                if (Double.isNaN(imageStats.mean)) {
-                    log.warning(String.format("Measurepoint with indices (%d, %d, %d)"
-                            + " has invalid min/mean/max values (%f, %f, %f)."
-                            + " Ignoring and setting values to 0.0",
-                            spot, row, col, imageStats.min, imageStats.mean, imageStats.max));
-                    imageStats.min = 0.0;
-                    imageStats.mean = 0.0;
-                    imageStats.max = 0.0;
+                try {
+                    DoubleStatistics stats = img.measure(spots.get(absIdx));
+                    values.add(Measurepoint.tryFrom(spot, row, col, stats));
+                } catch (IllegalArgumentException e) {
+                    // Rethrow as measurement exception, will be catched again below
+                    throw new MeasurementException(e);
+                } catch (MeasurementException e) {
+                    String msg = String.format(
+                            "Encountered measurement error: %s (spot=%d, row=%d, col%d, spot=%s)",
+                            e, spot, row, col, spot);
+                    log.log(Level.WARNING, msg);
+                    throw e;
                 }
-                values.add(Measurepoint.of(spot, row, col,
-                        imageStats.min, imageStats.max, imageStats.mean, imageStats.stdDev));
             }
         }
 
         return Data.fromMeasurepoints(values);
-    }
 
-    /**
-     * Gets the positional data of each measureField and returns it as an instance
-     * of imageStatistics.
-     *
-     * @param iPlus The image the measurement takes place on.
-     * @param spot  The measureField the positional metadata shall be extracted
-     *              from.
-     * @return Positional metadata of a given measureField.
-     */
-    private static ImageStatistics getSpotStats(ImagePlus iPlus, Geometry spot) {
-        if (spot instanceof Circle) {
-            Circle circleSpot = (Circle) spot;
-            iPlus.setRoi(new OvalRoi(circleSpot.position.x - circleSpot.diameter / 2.,
-                    circleSpot.position.y - circleSpot.diameter / 2.,
-                    circleSpot.diameter, circleSpot.diameter));
-        } else {
-            Polygon polySpot = (Polygon) spot;
-            FloatPolygon roiPolygon = new FloatPolygon();
-            for (int i = 0; i < polySpot.coordinates.size(); i++) {
-                Point p = polySpot.coordinates.get(i);
-                roiPolygon.addPoint(p.x, p.y);
-            }
-            iPlus.setRoi(new PolygonRoi(roiPolygon, Roi.POLYGON));
-        }
-
-        ImageStatistics imageStatistics = iPlus.getStatistics(Analyzer.getMeasurements());
-        iPlus.killRoi();
-
-        return imageStatistics;
     }
 
     /**
@@ -955,20 +841,23 @@ public final class Control implements Controlable {
      * This method must be independent of GUI or other interactions and must be able
      * to run headless.
      *
-     * @param iPlus      the image to measure
+     * @param img        the image to measure
      * @param parameters the parameters that specify what and how the measurement
      *                   should be done
      * @return the measured data
+     * @throws MeasurementException
      */
-    public static Data doMeasure(ImagePlus iPlus, Parameters parameters) {
+    public static Data doMeasure(Image img, Parameters parameters) throws MeasurementException {
         log.config("Initiating measurement with parameters");
         if (parameters.isInvertLut()) {
-            setBlackValueHigh(iPlus);
+            img.invert();
         }
         if (parameters.isSubtractBackground()) {
-            subtractBackground(iPlus, parameters.getBackgroundRectangles());
+            double noise = measureBackgroundNoise(img, parameters.getBackgroundRectangles());
+            // Value floored for consistency with prior versions
+            img.subtract((int) noise);
         }
-        return measureValues(iPlus, parameters);
+        return measureValues(img, parameters);
     }
 
     /**
@@ -977,10 +866,11 @@ public final class Control implements Controlable {
      * Only used for tests, hence a protected wrapper
      *
      * @return the measured data
+     * @throws MeasurementException
      */
-    protected Data doMeasure() {
+    protected Data doMeasure() throws MeasurementException {
         Parameters parameters = Parameters.fromSettingsAndSlide(settings, slide);
-        return doMeasure(imagePlus.get(), parameters);
+        return doMeasure(image.get().duplicate(), parameters);
     }
 
     /**
@@ -990,10 +880,11 @@ public final class Control implements Controlable {
      * Only used for tests, hence a protected wrapper
      *
      * @param exportFolder the folder to export the data to
+     * @throws MeasurementException
      */
-    protected void doMeasureAndExport(Path exportFolder, Metadata metadata) {
+    protected void doMeasureAndExport(Path exportFolder, Metadata metadata) throws MeasurementException {
         Parameters parameters = Parameters.fromSettingsAndSlide(settings, slide);
-        Data data = doMeasure(imagePlus.get(), parameters);
+        Data data = doMeasure(image.get(), parameters);
         exportIntoFolder(exportFolder, metadata, parameters,
                 data, DataStatistics.analyze(data));
     }
@@ -1003,44 +894,31 @@ public final class Control implements Controlable {
      */
     @Override
     public void measure() {
-        ImagePlus iPlus = ensureImageOpen().duplicate();
-        if (iPlus.getStackSize() > 1) {
-            log.log(Level.SEVERE, "Attempted to measure with image stack");
-            view.ifPresent(v -> v.showErrorDialog("Image stacks are currently unsupported", null));
-            return;
-        }
+        Image img = ensureImageOpen().duplicate();
 
         // Collect metadata
         ZonedDateTime datetime = ZonedDateTime.now();
         // Try to get a assay date from the measured image
-        File imageFile = new File(imagePlus.get().getOriginalFileInfo().getFilePath());
+        File imageFile = image.get().getFilePath().toFile();
         Optional<LocalDateTime> assayDate = getDateTimeOriginalFromFile(imageFile);
 
         // Run the measurement
         Parameters parameters = Parameters.fromSettingsAndSlide(settings, slide);
-        Data data = doMeasure(iPlus, parameters);
+        Data data;
+        try {
+            data = doMeasure(img, parameters);
+        } catch (MeasurementException e) {
+            log.log(Level.SEVERE, e.toString());
+            view.ifPresent(v -> v.showErrorDialog(
+                    Const.bundle.getString("control.measurementFailed.text"),
+                    Const.bundle.getString("control.measurementFailed.title")));
+            return;
+        }
         DataStatistics dataStatistics = DataStatistics.analyze(data);
 
         // Get the metadata from the user and export if requested
         log.config("Asking for metadata input");
         this.view.get().openExportGui(datetime, assayDate, parameters, data, dataStatistics);
-
-        IJ.showStatus("Opened ExportGui");
-    }
-
-    /**
-     * Inverts the LUT it hasn't already been inverted.
-     *
-     * @param iPlus Image the LUT shall be inverted on.
-     */
-    private static void setBlackValueHigh(ImagePlus iPlus) {
-        if (!iPlus.isInvertedLut()) {
-            log.config("Inverting the lookup-table.");
-            ImageProcessor iProc = iPlus.getProcessor();
-            iProc.invert();
-            iProc.invertLut();
-            iPlus.setProcessor(iProc);
-        }
     }
 
     /**
@@ -1103,10 +981,10 @@ public final class Control implements Controlable {
         }
 
         // Open the image to check the integrity against
-        ImagePlus iPlus = IJ.openImage(imagePath.toString());
-        // FIXME: Use a separate error for files that MARTin does not support but ImageJ
-        // will load.
-        if (iPlus == null || !isSupportedImagePlus(iPlus)) {
+        Image img;
+        try {
+            img = ImageImpl.read(imagePath);
+        } catch (IOException e) {
             return IntegrityCheckResult.ofError(IntegrityCheckError.IMAGE_OPEN_FAILED, ctx);
         }
         try {
@@ -1114,7 +992,9 @@ public final class Control implements Controlable {
             Parameters parameters = Const.mapper.readValue(
                     Files.readString(parametersPath, StandardCharsets.UTF_8), Parameters.class);
             // Check the integrity with the image and parameters
-            return IntegrityCheckResult.ofCompleted(checkIntegrity(folder, iPlus, parameters), ctx);
+            return IntegrityCheckResult.ofCompleted(checkIntegrity(folder, img, parameters), ctx);
+        } catch (MeasurementException e) {
+            return IntegrityCheckResult.ofError(IntegrityCheckError.MEASUREMENT_EXCEPTION, ctx);
         } catch (IOException | IllegalArgumentException e) {
             return IntegrityCheckResult.ofError(IntegrityCheckError.IO_EXCEPTION, ctx);
         }
@@ -1126,17 +1006,18 @@ public final class Control implements Controlable {
      * copy of the original image.
      *
      * @param folder     Directory of a singular measurement.
-     * @param iPlus      Original image.
+     * @param img        Original image.
      * @param parameters Positional metadata of original measurement.
      * @return Positive or negative integrity-check-result for each measurement
      *         file.
      * @throws IOException
      * @throws IllegalArgumentException
+     * @throws MeasurementException
      */
-    private HashMap<Path, Boolean> checkIntegrity(Path folder, ImagePlus iPlus, Parameters parameters)
-            throws IOException, IllegalArgumentException {
+    private HashMap<Path, Boolean> checkIntegrity(Path folder, Image img, Parameters parameters)
+            throws IOException, IllegalArgumentException, MeasurementException {
         // Remeasure image based on the parameters
-        Data data = doMeasure(iPlus, parameters);
+        Data data = doMeasure(img, parameters);
         DataStatistics dataStatistics = DataStatistics.analyze(data);
 
         // Check the existing files for similarity
@@ -1180,16 +1061,6 @@ public final class Control implements Controlable {
         return Files.isRegularFile(path) && Files.isReadable(path);
     }
 
-    /**
-     * Checks if the ImagePlus is supported by our application.
-     *
-     * @param iPlus the image to check
-     * @return if the image is supported
-     */
-    private boolean isSupportedImagePlus(ImagePlus iPlus) {
-        return !(iPlus.isComposite() || iPlus.hasImageStack() || iPlus.isHyperStack());
-    }
-
     @Override
     public ProjectExt importProject(Path path) throws IOException, JsonParseException {
         return settings.getProjectSettings().importProject(path);
@@ -1219,77 +1090,53 @@ public final class Control implements Controlable {
     }
 
     /**
-     * The purpose of this method is to generate a gridded image which can be saved
+     * The purpose of this method is to generate a gridded image which can be
+     * saved
      * by the user.
      *
      * @return current slideMask selection cropped out
      */
-    public ImagePlus generateGridImage() {
+    public BufferedImage generateGridImage() {
         log.config("Initiate generating gridded image.");
-        ImageProcessor iProc = ensureImageOpen().getProcessor().duplicate().convertToRGB();
+        Image img = ensureImageOpen();
 
         DrawOptions drawOptions = new DrawOptions(true,
                 settings.getDisplaySettings().isShowSpotfieldGrids(),
                 true, true, false,
                 settings.getDisplaySettings().isShowMeasureCircles());
-        slide.drawElements(new ProcessorPen(iProc), drawOptions);
 
-        FloatPolygon roiPolygon = new FloatPolygon();
+        // Calculate slide bounds
         double[][] slideCoordinates = slide.getSlideCoordinates();
+        List<Point> slideCoords = new ArrayList<>(slideCoordinates[0].length);
         for (int i = 0; i < slideCoordinates[0].length; i++) {
-            int x = (int) Math.round(slideCoordinates[0][i]);
-            int y = (int) Math.round(slideCoordinates[1][i]);
-            roiPolygon.addPoint(x, y);
+            double x = slideCoordinates[0][i];
+            double y = slideCoordinates[1][i];
+            slideCoords.add(Point.of(x, y));
         }
-        iProc.setRoi(new PolygonRoi(roiPolygon, Roi.POLYGON));
-        iProc = iProc.crop();
+        Polygon slideArea = Polygon.ofPolygon(slideCoords);
+        Rectangle2D.Double slideBounds = slideArea.calculateBounds();
 
-        return new ImagePlus("cropped", iProc);
-    }
+        // Create a new BufferedImage for the cropped area
+        int padding = 50;
+        int cornerX = (int) (slideBounds.x - padding);
+        int cornerY = (int) (slideBounds.y - padding);
+        int width = (int) (slideBounds.width + 2.0 * padding);
+        int height = (int) (slideBounds.height + 2.0 * padding);
+        BufferedImage croppedImage = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 
-    /**
-     * Generates an image plus depicting the current state of the search algorithm.
-     * This is a debug method and should be removed in the final release.
-     *
-     * @param searchPerimeter bounds of the search algorith
-     * @param positions       current positions of searchFields
-     * @param hWidth          width of searchField
-     * @param hHeight         height of searchField
-     * @return imagePlus with current state of search Algorithm
-     */
-    public ImagePlus recordSearchAlgo(PolyShape searchPerimeter, ArrayList<Point> positions,
-            double hWidth, double hHeight) {
+        // Draw the grid image
+        Graphics2D g2d = croppedImage.createGraphics();
+        g2d.translate(-cornerX, -cornerY);
+        g2d.drawImage(img.getWrapped(), 0, 0, null);
+        slide.drawElements(new ProcessorPen(g2d), drawOptions);
+        g2d.dispose();
 
-        ImageProcessor iProc = ensureImageOpen().getProcessor().duplicate().convertToRGB();
-
-        DrawOptions drawOptions = new DrawOptions(true,
-                settings.getDisplaySettings().isShowSpotfieldGrids(),
-                false, true, false,
-                settings.getDisplaySettings().isShowMeasureCircles());
-        Drawable stilus = new ProcessorPen(iProc);
-        slide.drawElements(stilus, drawOptions);
-        slide.drawSearchFields(stilus, positions, hWidth, hHeight);
-
-        int[] polyX = new int[searchPerimeter.getNPoints()];
-        int[] polyY = new int[searchPerimeter.getNPoints()];
-        Point[] periPoints = searchPerimeter.getCornersAsPoints();
-        for (int i = 0; i < periPoints.length; i++) {
-            polyX[i] = (int) periPoints[i].x;
-            polyY[i] = (int) periPoints[i].y;
-        }
-        stilus.setColor(Color.RED);
-        stilus.drawPolygon(polyX, polyY);
-        return new ImagePlus("Debug: Search Algo Trace", iProc);
+        return croppedImage;
     }
 
     @Override
     public void drawElements(Drawable stilus, DrawOptions drawOptions) {
         slide.drawElements(stilus, drawOptions);
-    }
-
-    @Override
-    public void showResultsTable(GenericTable table) {
-        ui.show(table);
     }
 
     @Override
@@ -1308,21 +1155,7 @@ public final class Control implements Controlable {
     @Override
     public void exit() {
         log.info(String.format("Shutting down MARTin in %s mode", runType));
-        switch (runType) {
-            case STANDALONE:
-                ij.dispose();
-                // Since new Scijava versions still have the bug, that the application does not
-                // exit, we kill everything here.
-                System.exit(0);
-                break;
-            case PLUGIN:
-                // If our GUI is closed, we have to recreate the image window with the image and
-                // close only our own GUI.
-                this.imagePlus.ifPresent(imp -> new StackWindow(imp));
-                break;
-            default:
-                break;
-        }
+        System.exit(0);
     }
 
     /**
@@ -1331,28 +1164,14 @@ public final class Control implements Controlable {
      * @param enabled if true, filtering is shown in the canvas
      */
     public void setFilterEnabled(boolean enabled) {
-        ImagePlus iPlus = ensureImageOpen().duplicate();
+        Image img = ensureImageOpen().duplicate();
         if (enabled) {
             log.config("Adaptive filter was enabled.");
-            // If we are an 24-bit RGB image, convert to grayscale before calculating the
-            // filter.
-            if (iPlus.isRGB()) {
-                // This uses (R+B+G) / 3
-                // Scaling is disabled, this does not rescale from min-max to 0-255
-                iPlus.setProcessor(iPlus.getProcessor().convertToByte(false));
-            }
-            // No idea what the equivalent in the ImageJ2 API is and if it even
-            // works with an legacy plugin such as this one ... therefore, I use
-            // the V1 API.
-            IJ.run(iPlus, "Normalize Local Contrast",
-                    "block_radius_x=5 block_radius_y=5 standard_deviations=1 center stretch");
-            // Reset that we made any changes to prevent triggering a dialog
-            // whether we want to save any changes of to the image.
-            iPlus.changes = false;
+            img.normalizeLocalContrast(5, 5, 1);
         } else {
             log.config("Adaptive filter was disabled.");
         }
-        view.ifPresent(v -> v.setDisplayImage(iPlus, false));
+        view.ifPresent(v -> v.setDisplayImage(img, false));
         update();
     }
 
@@ -1379,11 +1198,16 @@ public final class Control implements Controlable {
             return;
         }
 
-        // Load the image from the path
-        File file = path.get().toFile();
-        log.info(String.format("Loading image file: %s", file));
-        ImagePlus iPlus = IJ.openImage(file.getPath());
-        if (iPlus == null) {
+        log.info(String.format("Loading image file: %s", path.get()));
+        Image img;
+        try {
+            img = ImageImpl.read(path.get());
+        } catch (IllegalArgumentException e) {
+            String msg = Const.bundle.getString("control.errorCompositeStackImage.text");
+            log.warning(msg);
+            view.ifPresent(v -> v.showErrorDialog(msg, Const.bundle.getString("control.errorOpeningFile.title")));
+            return;
+        } catch (IOException e) {
             // Display error message and exit if the file could not be loaded
             String msg = Const.bundle.getString("control.errorOpeningFile.text");
             log.severe(msg);
@@ -1391,16 +1215,10 @@ public final class Control implements Controlable {
             view.ifPresent(v -> v.showErrorDialog(msg, Const.bundle.getString("control.errorOpeningFile.title")));
             return;
         }
-        if (!isSupportedImagePlus(iPlus)) {
-            String msg = Const.bundle.getString("control.errorCompositeStackImage.text");
-            log.warning(msg);
-            view.ifPresent(v -> v.showErrorDialog(msg, Const.bundle.getString("control.errorOpeningFile.title")));
-            return;
-        }
 
         // Replacing the current image with the new one
-        view.ifPresent(v -> v.setDisplayImage(iPlus.duplicate(), true));
-        this.imagePlus = Optional.of(iPlus);
+        view.ifPresent(v -> v.setDisplayImage(img.duplicate(), true));
+        this.image = Optional.of(img);
         this.slide = new SlideMask(settings);
 
         update();
@@ -1413,12 +1231,12 @@ public final class Control implements Controlable {
     @Override
     public void imageClosed() {
         log.info("Image window has been closed");
-        this.imagePlus = Optional.empty();
+        this.image = Optional.empty();
     }
 
     @Override
     public boolean isImageLoaded() {
-        return this.imagePlus.isPresent();
+        return this.image.isPresent();
     }
 
     @Override

@@ -9,9 +9,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
-import java.awt.Rectangle;
 import java.awt.SystemColor;
-import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowListener;
@@ -50,8 +48,8 @@ import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.MouseInputListener;
 
 import com.scitequest.martin.Const;
-import com.scitequest.martin.CustomIjKeyListener;
 import com.scitequest.martin.GitInfo;
+import com.scitequest.martin.Image;
 import com.scitequest.martin.Version;
 import com.scitequest.martin.export.Data;
 import com.scitequest.martin.export.DataStatistics;
@@ -61,21 +59,12 @@ import com.scitequest.martin.utils.SystemUtils;
 import com.scitequest.martin.view.IntegrityCheckResult.IntegrityCheckContext;
 import com.scitequest.martin.view.IntegrityCheckResult.IntegrityCheckError;
 
-import ij.ImagePlus;
-import ij.gui.ImageCanvas;
-import ij.gui.StackWindow;
-import net.imagej.patcher.LegacyInjector;
-
 /**
  * This GUI is the main control unit for the user.
  *
  * It is able to initiate functions of control as well as open the optionsGUI.
  */
 public final class Gui extends JFrame implements View, MouseInputListener {
-    static {
-        LegacyInjector.preinit();
-    }
-    private static final long serialVersionUID = 1L;
 
     /** The logger for this class. */
     private static final Logger log = Logger.getLogger("com.scitequest.martin.view.Gui");
@@ -96,7 +85,7 @@ public final class Gui extends JFrame implements View, MouseInputListener {
     private final JSpinner xPositionSpinner;
     private final JSpinner yPositionSpinner;
 
-    private Optional<StackWindow> stackWindow = Optional.empty();
+    private Optional<SlideViewer> slideViewer = Optional.empty();
     private boolean otherGuiOpened = false;
     private int noHoverMessageIndex = 0;
     private boolean activeListener = true;
@@ -516,45 +505,32 @@ public final class Gui extends JFrame implements View, MouseInputListener {
     }
 
     @Override
-    public void setDisplayImage(ImagePlus iPlus, boolean recreateWindow) {
-        if (recreateWindow || stackWindow.isEmpty()) {
+    public void setDisplayImage(Image img, boolean recreateWindow) {
+        if (recreateWindow || slideViewer.isEmpty()) {
             // Close existing window
-            stackWindow.ifPresent(sw -> {
-                sw.dispose();
-                sw.close();
+            slideViewer.ifPresent(viewer -> {
+                viewer.dispose();
             });
             // Create new stack window
-            createImageCanvas(iPlus);
+            createImageCanvas(img);
             // Update GUI
             toggleAllButtons(true);
             helpText.setText(Const.bundle.getString("infoText.fileOpened.text"));
         } else {
-            StackWindow sw = stackWindow.get();
-            // We need to store the x, y, zoom and size of the old image canvas
-            Rectangle srcRect = sw.getCanvas().getSrcRect();
-            double magnification = sw.getCanvas().getMagnification();
-            Dimension size = sw.getCanvas().getSize();
-            // Now actually set the new image
-            sw.setImage(iPlus);
-            // Copy the display options over from the old image
-            sw.getCanvas().setSourceRect(srcRect);
-            sw.getCanvas().setMagnification(magnification);
-            sw.getCanvas().setSize(size);
+            ImageViewer viewer = slideViewer.get();
+            viewer.setImage(img.getWrapped(), true);
         }
-        // Ensure the image is activated
-        iPlus.setActivated();
     }
 
     /**
      * Creates a new canvas to display an image and sets the instance variables.
      */
-    private void createImageCanvas(ImagePlus iPlus) {
+    private void createImageCanvas(Image img) {
         // Creates an empty drawable image window including the canvas.
-        var gdc = new GuiDrawCanvas(control, iPlus, settings);
-        var sw = new StackWindow(iPlus, gdc);
-        proxyImagejKeyListener(sw, control);
+        var viewer = new SlideViewer(control, settings);
+        viewer.setImage(img.getWrapped(), false);
 
-        sw.addWindowListener(new WindowListener() {
+        viewer.addWindowListener(new WindowListener() {
             @Override
             public void windowActivated(WindowEvent arg0) {
             }
@@ -566,9 +542,9 @@ public final class Gui extends JFrame implements View, MouseInputListener {
             @Override
             public void windowClosing(WindowEvent arg0) {
                 // Destroy the stack window / "us"
-                sw.dispose();
+                viewer.dispose();
                 // We don't have any stack window open
-                stackWindow = Optional.empty();
+                slideViewer = Optional.empty();
                 // Update GUI
                 stateNoImageOpened();
                 // Notifiy control that the image has been closed.
@@ -592,25 +568,7 @@ public final class Gui extends JFrame implements View, MouseInputListener {
             }
         });
 
-        this.stackWindow = Optional.of(sw);
-    }
-
-    private static void proxyImagejKeyListener(StackWindow sw, Controlable control) {
-        // Get original key listener of ImageJ
-        KeyListener ijKeyListener = sw.getKeyListeners()[0];
-        // Remove all listeners from the StackWindow
-        for (KeyListener listener : sw.getKeyListeners()) {
-            sw.removeKeyListener(listener);
-        }
-        // Remove all listeners from the Canvas
-        ImageCanvas ic = sw.getCanvas();
-        for (KeyListener listener : ic.getKeyListeners()) {
-            ic.removeKeyListener(listener);
-        }
-        // Proxy the key listener for both the stack window and canvas
-        CustomIjKeyListener proxyListener = new CustomIjKeyListener(ijKeyListener, control);
-        sw.addKeyListener(proxyListener);
-        ic.addKeyListener(proxyListener);
+        this.slideViewer = Optional.of(viewer);
     }
 
     @Override
@@ -730,13 +688,15 @@ public final class Gui extends JFrame implements View, MouseInputListener {
                 return Const.bundle.getString("mainGui.integrityCheck.error.ioExceptionText");
             case NO_FILES_CHECKED:
                 return Const.bundle.getString("mainGui.integrityCheck.error.noFilesCheckedText");
+            case MEASUREMENT_EXCEPTION:
+                return Const.bundle.getString("mainGui.integrityCheck.error.measurementException");
             default:
                 return "Unknown integrity check error";
         }
     }
 
     public void setCanvasInteractible(boolean interactible) {
-        GuiDrawCanvas.toggleCanvas(interactible);
+        ImageViewer.toggleCanvas(interactible);
     }
 
     /**
@@ -751,7 +711,7 @@ public final class Gui extends JFrame implements View, MouseInputListener {
         setxPositionSpinner(control.getSlidexPosition());
         setyPositionSpinner(control.getSlideyPosition());
         activeListener = true;
-        stackWindow.ifPresent(sw -> sw.getCanvas().repaint());
+        slideViewer.ifPresent(viewer -> viewer.repaint());
     }
 
     @Override

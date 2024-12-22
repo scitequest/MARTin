@@ -46,9 +46,19 @@ public final class DoubleStatistics extends DoubleSummaryStatistics {
 
     public double getStandardDeviation() {
         long count = getCount();
-        return count > 0
-                ? Math.sqrt((getSumOfSquare() - count * Math.pow(getAverage(), 2)) / (count))
-                : 0.0d;
+        if (count > 0) {
+            return Math.sqrt((getSumOfSquare() - count * Math.pow(getAverage(), 2)) / (count));
+        }
+        return 0.0;
+    }
+
+    public double getSampleStandardDeviation() {
+        long count = getCount();
+        if (count > 0.0) {
+            return Math.sqrt((getSumOfSquare() - count * Math.pow(getAverage(), 2))
+                    / (count - 1.0));
+        }
+        return 0.0;
     }
 
     public static Collector<Double, ?, DoubleStatistics> collector() {
