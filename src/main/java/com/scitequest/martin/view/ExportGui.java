@@ -284,7 +284,7 @@ public final class ExportGui extends JDialog {
                 new Insets(0, 0, 5, 0), 0, 0));
 
         // ---- imager ----
-        imager.putClientProperty("JTextField.placeholderText", "Azure 300");
+        imager.putClientProperty("JTextField.placeholderText", "Imager");
         imager.putClientProperty("JTextField.showClearButton", true);
         mainMetadata.add(imager, new GridBagConstraints(0, 11, 2, 1, 0.0, 0.0,
                 GridBagConstraints.CENTER, GridBagConstraints.BOTH,
